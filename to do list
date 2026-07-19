@@ -1,1 +1,166 @@
 To do list 
+""" To-Do List Application (GUI) ----------------------------- A simple, persistent to-do list built with Python's tkinter. Tasks are saved to a local tasks.json file so they survive between runs. """
+
+import json
+import os
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tasks.json")
+
+# ---------- Color palette ----------
+BG = "#1F2933"        # deep charcoal background
+PANEL = "#2B3648"     # slightly lighter panel
+ACCENT = "#4FD1C5"    # teal accent
+DANGER = "#F76C6C"    # coral for delete/clear
+TEXT = "#ECEFF4"
+MUTED = "#7C8B9E"
+FONT_TITLE = ("Segoe UI", 20, "bold")
+FONT_BODY = ("Segoe UI", 12)
+FONT_SMALL = ("Segoe UI", 10)
+
+
+class ToDoApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("To-Do List")
+        self.root.geometry("420x560")
+        self.root.configure(bg=BG)
+        self.root.minsize(360, 480)
+
+        self.tasks = self.load_tasks()
+
+        self._build_ui()
+        self._refresh_list()
+
+    # ---------- persistence ----------
+    def load_tasks(self):
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                return []
+        return []
+
+    def save_tasks(self):
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.tasks, f, indent=2)
+
+    # ---------- UI ----------
+    def _build_ui(self):
+        header = tk.Frame(self.root, bg=BG)
+        header.pack(fill="x", padx=20, pady=(20, 10))
+
+        tk.Label(header, text="To-Do List", font=FONT_TITLE, bg=BG, fg=TEXT).pack(anchor="w")
+        self.count_label = tk.Label(header, text="", font=FONT_SMALL, bg=BG, fg=MUTED)
+        self.count_label.pack(anchor="w")
+
+        entry_frame = tk.Frame(self.root, bg=BG)
+        entry_frame.pack(fill="x", padx=20, pady=10)
+
+        self.entry = tk.Entry(entry_frame, font=FONT_BODY, bg=PANEL, fg=TEXT,
+                               insertbackground=TEXT, relief="flat")
+        self.entry.pack(side="left", fill="x", expand=True, ipady=8, padx=(0, 8))
+        self.entry.bind("<Return>", lambda e: self.add_task())
+
+        add_btn = tk.Button(entry_frame, text="Add", font=FONT_BODY, bg=ACCENT, fg="#10151B",
+                             relief="flat", activebackground="#3FBBAF", command=self.add_task)
+        add_btn.pack(side="left", ipadx=10, ipady=6)
+
+        # Scrollable task list
+        list_frame = tk.Frame(self.root, bg=BG)
+        list_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        self.canvas = tk.Canvas(list_frame, bg=BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.canvas.yview)
+        self.list_container = tk.Frame(self.canvas, bg=BG)
+
+        self.list_container.bind(
+            "<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        self.canvas.create_window((0, 0), window=self.list_container, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Footer buttons
+        footer = tk.Frame(self.root, bg=BG)
+        footer.pack(fill="x", padx=20, pady=(0, 20))
+
+        clear_btn = tk.Button(footer, text="Clear Completed", font=FONT_SMALL, bg=PANEL, fg=TEXT,
+                               relief="flat", command=self.clear_completed)
+        clear_btn.pack(side="left")
+
+        clear_all_btn = tk.Button(footer, text="Clear All", font=FONT_SMALL, bg=DANGER, fg="#10151B",
+                                   relief="flat", command=self.clear_all)
+        clear_all_btn.pack(side="right")
+
+    def _refresh_list(self):
+        for widget in self.list_container.winfo_children():
+            widget.destroy()
+
+        for i, task in enumerate(self.tasks):
+            self._build_task_row(i, task)
+
+        active = sum(1 for t in self.tasks if not t["done"])
+        total = len(self.tasks)
+        self.count_label.config(text=f"{active} active / {total} total")
+
+    def _build_task_row(self, index, task):
+        row = tk.Frame(self.list_container, bg=PANEL)
+        row.pack(fill="x", pady=4, ipady=6)
+
+        var = tk.BooleanVar(value=task["done"])
+        chk = tk.Checkbutton(row, variable=var, bg=PANEL, activebackground=PANEL,
+                              command=lambda: self.toggle_task(index))
+        chk.pack(side="left", padx=(10, 4))
+
+        text_color = MUTED if task["done"] else TEXT
+        font = (FONT_BODY[0], FONT_BODY[1], "overstrike" if task["done"] else "normal")
+        label = tk.Label(row, text=task["text"], font=font, bg=PANEL, fg=text_color, anchor="w")
+        label.pack(side="left", fill="x", expand=True)
+
+        del_btn = tk.Button(row, text="✕", font=FONT_SMALL, bg=PANEL, fg=DANGER,
+                             relief="flat", command=lambda: self.delete_task(index))
+        del_btn.pack(side="right", padx=10)
+
+    # ---------- actions ----------
+    def add_task(self):
+        text = self.entry.get().strip()
+        if not text:
+            return
+        self.tasks.append({"text": text, "done": False})
+        self.entry.delete(0, tk.END)
+        self.save_tasks()
+        self._refresh_list()
+
+    def toggle_task(self, index):
+        self.tasks[index]["done"] = not self.tasks[index]["done"]
+        self.save_tasks()
+        self._refresh_list()
+
+    def delete_task(self, index):
+        del self.tasks[index]
+        self.save_tasks()
+        self._refresh_list()
+
+    def clear_completed(self):
+        self.tasks = [t for t in self.tasks if not t["done"]]
+        self.save_tasks()
+        self._refresh_list()
+
+    def clear_all(self):
+        if not self.tasks:
+            return
+        if messagebox.askyesno("Clear All", "Delete all tasks? This cannot be undone."):
+            self.tasks = []
+            self.save_tasks()
+            self._refresh_list()
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ToDoApp(root)
+    root.mainloop()
